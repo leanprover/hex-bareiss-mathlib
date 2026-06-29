@@ -4,7 +4,7 @@ defaultTargets = ["HexBareissMathlib"]
 [[require]]
 name = "HexDeterminantMathlib"
 git = "https://github.com/kim-em/hex-determinant-mathlib.git"
-rev = "eb458b21c625a3f0886684cc809f4c9a251f6368"
+rev = "752b936b2bba1a9b51d5deaf8033a78d7986fcb9"
 
 [[require]]
 name = "mathlib"
