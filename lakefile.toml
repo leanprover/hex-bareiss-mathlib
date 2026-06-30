@@ -4,12 +4,12 @@ defaultTargets = ["HexBareissMathlib"]
 [[require]]
 name = "HexBasic"
 git = "https://github.com/kim-em/hex-basic.git"
-rev = "49d4eb822ce66aa14b18c2472c18848a2411792d"
+rev = "c9cb6bcb3287ea0870f66c9dfcba08baa08f97f6"
 
 [[require]]
 name = "HexDeterminantMathlib"
 git = "https://github.com/kim-em/hex-determinant-mathlib.git"
-rev = "6c03715c299e5be6ac15960233a6a5c6d1c430e3"
+rev = "7714f1421f41c34cf0806accb497699613083d88"
 
 [[require]]
 name = "mathlib"
