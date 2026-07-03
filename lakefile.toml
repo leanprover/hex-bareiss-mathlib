@@ -9,7 +9,7 @@ rev = "f1580d28c2e9ff9e8d4d7cdef9dccbaa17780b03"
 [[require]]
 name = "HexDeterminantMathlib"
 git = "https://github.com/leanprover/hex-determinant-mathlib.git"
-rev = "3370272f212fb1a1e0a31c39d9ce2c1c9c571dda"
+rev = "df66e8f70e09e85f4317f793c263fde9379236a1"
 
 [[require]]
 name = "mathlib"
