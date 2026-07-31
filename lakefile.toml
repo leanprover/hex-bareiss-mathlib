@@ -1,20 +1,25 @@
 name = "hex-bareiss-mathlib"
 defaultTargets = ["HexBareissMathlib"]
 
+leanOptions = [
+  { name = "doc.verso", value = true },
+  { name = "doc.verso.suggestions", value = false },
+]
+
 [[require]]
 name = "HexBasic"
 git = "https://github.com/leanprover/hex-basic.git"
-rev = "f1580d28c2e9ff9e8d4d7cdef9dccbaa17780b03"
+rev = "a3ab4fd9a79efbe6b07337836b3b5828d22d65a6"
 
 [[require]]
 name = "HexDeterminantMathlib"
 git = "https://github.com/leanprover/hex-determinant-mathlib.git"
-rev = "e5d646df54cbe693a2c8deb094770dd977875a7b"
+rev = "3f04d9eeda6251f6d71c7b3bd4650d635b321812"
 
 [[require]]
 name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4.git"
-rev = "v4.32.0-rc1-patch1"
+rev = "v4.32.2"
 
 [[lean_lib]]
 name = "HexBareissMathlib"
