@@ -17,14 +17,9 @@ fresh-module probes under `bench/HexBareissMathlib/ProofProbe` against the
 unmodified pinned `eval_det`. Build-only examples live in
 `HexBareissMathlib/Tests.lean`.
 
-Computational conformance owner: `HexBareiss`.
-
-Computational performance owner: `HexBareiss` for the producer; this library
-for the tactic.
-
 ## Coefficient contract
 
-Every theorem here takes `[CommRing R] [DecidableEq R]` (Mathlib's `CommRing`,
+The Bareiss correspondence theorems take `[CommRing R] [DecidableEq R]` (Mathlib's `CommRing`,
 which supplies the `Lean.Grind.CommRing` instance the Mathlib-free layer's
 `Hex.Matrix.det` needs) together with the exact quotient and its single law,
 exactly as specified in
@@ -34,7 +29,8 @@ exactly as specified in
 (quot : R → R → R) (hquot : ∀ a b : R, b ≠ 0 → quot (a * b) b = a)
 ```
 
-No public `IsDomain`, `NoZeroDivisors` or nontriviality hypothesis appears. The
+These correspondence theorems have no public `IsDomain`, `NoZeroDivisors`
+or nontriviality hypothesis. The
 coefficient facts the development needs are supplied by
 [`HexBasic/ExactDiv.lean`](https://github.com/leanprover/hex-basic/blob/main/HexBasic/ExactDiv.lean)
 and apply under a Mathlib `CommRing`: the two instance paths to `Zero R` and
@@ -298,6 +294,16 @@ for the transposition. For `ℚ`, `scaledRows_spec` gives
 `(∏ s) · det = value`, and the kernel-checked `v · ∏ s = value` cancels the
 nonzero product (`prodNat_cast`).
 
+## Symbolic determinant
+
+The symbolic handler is specified in
+[hex-poly-det-mathlib](../../SPEC/Libraries/hex-poly-det-mathlib.md). It attaches
+to this library's determinant syntax and uses a cached, division-free Bird
+recurrence with scalar equality proofs. It is independent of the polynomial
+witness instantiation. Keep symbolic normalization outside this numeric library;
+its published import closure must not acquire polynomial/reflection providers.
+The generic executable polynomial witness remains a separate hex-bareiss API.
+
 ## The `det` tactic
 
 `HexBareissMathlib/Tactic.lean` declares the non-reserved tactic keyword
@@ -308,9 +314,9 @@ of the literal layer of `hex-matrix-mathlib` (`!![…]`, `Matrix.of ![…]`,
 (unfolded within a small budget), and `d` a closed value; the term form
 `det% A` returning `Certified Matrix.det A` with its `value` and `proof`
 (the `!![…]` notations are given an integer expectation); and the simproc
-`hex_norm_det`, which rewrites `Matrix.det A` to its value and falls back
-to Mathlib's `norm_det` when the Hex frontend declines, so that the two
-form one simp set and no input `norm_det` accepts regresses. Entries are
+`Hex.norm_det`, which rewrites `Matrix.det A` using a Hex certificate and
+leaves unsupported inputs unchanged. No entry point implicitly invokes
+Mathlib's `norm_det` or `eval_det`. Entries are
 closed numeric expressions that `norm_num` evaluates (the `fun` form's
 entries first pass through the default simp set, for `Fin.val`, casts and
 `if i = j` tests) and that the kernel reduces to their numerals.
@@ -323,18 +329,51 @@ kernel `decide` on `entriesEq` otherwise), composed with a kernel-decided
 comparison of the value with `d`. A rational matrix is scaled row by row by
 the least common multiple of its denominators to an integer one, whose
 witness is checked by `checkDetRat` together with the scaling and the
-value, through `det_eq_of_checkRat'`. The whole proof is added as an
-auxiliary theorem (`mkAuxTheorem`, with asynchronous checking off) so the
-kernel checks it exactly once and the tactic sees a rejection. Outcomes
+value, through `det_eq_of_checkRat'`. The tactic takes the shared
+configuration structure `HexMatrixMathlib.Det.Config`, extending
+`HexMatrixMathlib.KernelConfig`, as an `optConfig`
+(`det -packing`; the default is packed) and is configured in no other way;
+with packing on the checks are `checkDetListPacked` and `checkDetRatPacked`
+with the entry bound and slot width the tactic computes from the entries
+and the transform, through `det_eq_of_checkListPacked'` and
+`det_eq_of_checkRatPacked'`. The term form `det%` and the simproc
+`Hex.norm_det` use the default configuration. The whole proof is added as an
+auxiliary lemma on the closed target (`addClosedProof` of the literal
+layer, with asynchronous checking off) so the kernel checks it exactly
+once, with no elaborator type check first, and the tactic sees a
+rejection. Outcomes
 follow the protocol of [SPEC/matrix-tactics.md](../../SPEC/matrix-tactics.md):
-a goal that is not a determinant equation is not applicable; a matrix with
-free variables, a carrier other than `ℤ` or `ℚ`, a non-square shape, a
-non-literal closed matrix or an entry `norm_num` cannot evaluate is
-declined with the reason, and the `det` tactic then runs
-`simp only [hex_norm_det]`, which reaches `norm_det` for symbolic entries
-and other commutative rings (normalizing the determinant as `eval_det`
-does; the residual goal is for `ring` or `decide`) and reports the decline
-if that fails too; a false target is reported with the certified value
+before evaluating entries or running the producer, a goal outside determinant
+equalities, an open matrix or value (including unresolved metavariables),
+a carrier other than `ℤ` or `ℚ`, a non-square shape, or an unrecognized
+literal is `notApplicable`. The numeric tactic throws
+`throwUnsupportedSyntax` for those cases. The last-resort handler is
+registered **before** the numeric one, so Lean's reverse registration order
+tries it **after** the numeric one and any later extensions. Extensions
+must also use `@[no_fallback]` for their own errors and
+`throwUnsupportedSyntax` outside their fragments. It reclassifies
+the target and, for determinant equations, tries `simp only [Hex.norm_det]`
+before reporting `det: not applicable: …` with the reason. This can normalize
+a closed numeric determinant with an open target value using a Hex certificate,
+leaving a residual value equality. This simp-only diagnostic behavior is for the
+numeric-only import. With the
+symbolic companion imported, equality goals with numeric matrices and symbolic
+right-hand sides obtain the numeric certificate and use the companion's scalar
+comparison, closing or reporting a decline instead of leaving a residual goal.
+Symbolic matrices and unsupported carriers require a Hex extension or an explicit
+user invocation of another tactic.
+
+An entry or closed value that cannot be evaluated is still declined with
+the reason; the numeric handler retains the same Hex certificate normalization for these
+capability declines. Its `@[no_fallback]` attribute commits ordinary errors,
+so producer failures, rejected certificates and budget errors cannot be
+masked by a later tactic handler. Unsupported syntax still delegates.
+Hex certificate normalization propagates errors unchanged, including certificate errors
+from its simproc; it reports the original reason only when simp makes no
+progress.
+The `det%` form reports the classification reason directly; the simproc
+returns no result for either inapplicability or a capability decline.
+A false target is reported with the certified value
 before any proof is built; a rejection by the kernel is diagnosed by
 evaluating the certificate check and the identification of the literal in
 turn, and reported as a producer bug or an entry the kernel cannot
@@ -373,43 +412,90 @@ the delta):
 | rational `8 × 8` | 0.69 s | 0.20 s | 3.5 |
 
 Proof time against dimension, for the dense `8`-bit, singular (rank
-`n − 1`) and dense `64`-bit families up to a ten-second cap per run, is
+`n − 1`) and dense `64`-bit families up to a ten-second cap per run, in
+three arms (`eval_det`, `det`, and `det -packing` for the plain checker on
+the same certificate), is
 recorded by `scripts/bench/det_tactic_size_sweep.py` (profiler totals per
 file, imports excluded, the median of three runs per point with the range
 kept); the current record is
-`reports/bench-results/hex-bareiss-mathlib-tactic-size-2166e872dce6-chungus2.json`.
-`eval_det` reaches `n = 14` in every family (6.7, 7.7 and 7.0 s) and `det`
-reaches `n = 40` on the dense family (7.2 s), `n = 48` on the singular
-family (5.3 s) and `n = 24`, the end of its ladder, on the 64-bit family
-(1.5 s); the kernel is about a third to a half of `det`'s time at those
-dimensions, the literal's elaboration and the compiled producer the rest.
-The record is plotted by `scripts/plots/hex-bareiss-mathlib-tactic-size.py`
-to `reports/figures/hex-bareiss-mathlib-tactic-size.svg`.
+`reports/bench-results/hex-bareiss-mathlib-tactic-size-2232712e8c2f-chungus2.json`.
+`eval_det` reaches `n = 14` in every family (7.1, 8.2 and 8.3 s) and `det`
+reaches `n = 48` on the dense family (2.2 s, of which the kernel is
+1.4 s), `n = 48` on the singular family (1.2 s, kernel 0.3 s) and
+`n = 24`, the end of its ladder, on the 64-bit family (0.6 s, kernel
+0.4 s); `det -packing` reaches the same dimensions at 4.4, 1.2 and 0.7 s.
+The record is plotted by
+`scripts/plots/hex-bareiss-mathlib-tactic-size.py` to
+`reports/figures/hex-bareiss-mathlib-tactic-size.svg`.
 
 Median kernel shares recorded by the same size sweep are:
 
-| family | `eval_det` | `det` |
-|---|---|---|
-| dense `8 × 8`, 8-bit | 246 ms | 23 ms |
-| dense `12 × 12`, 8-bit | 1.48 s | 63 ms |
-| dense `14 × 14`, 8-bit | 2.97 s | 103 ms |
-| dense `16 × 16`, 8-bit | timeout | 163 ms |
-| dense `32 × 32`, 8-bit | timeout | 1.55 s |
-| dense `40 × 40`, 8-bit | timeout | 3.73 s |
-| singular `8 × 8` | 244 ms | 13 ms |
-| singular `16 × 16` | timeout | 58 ms |
-| singular `32 × 32` | timeout | 721 ms |
-| singular `48 × 48` | timeout | 2.33 s |
-| dense `8 × 8`, 64-bit | 272 ms | 24 ms |
-| dense `16 × 16`, 64-bit | timeout | 170 ms |
-| dense `24 × 24`, 64-bit | timeout | 611 ms |
+| family | `eval_det` | `det` | `det -packing` |
+|---|---|---|---|
+| dense `8 × 8`, 8-bit | 250 ms | 28 ms | 18 ms |
+| dense `12 × 12`, 8-bit | 1.51 s | 54 ms | 44 ms |
+| dense `14 × 14`, 8-bit | 3.26 s | 74 ms | 66 ms |
+| dense `16 × 16`, 8-bit | timeout | 113 ms | 111 ms |
+| dense `32 × 32`, 8-bit | not run | 549 ms | 936 ms |
+| dense `40 × 40`, 8-bit | not run | 845 ms | 2.00 s |
+| singular `8 × 8` | 239 ms | 10 ms | 10 ms |
+| singular `16 × 16` | timeout | 31 ms | 30 ms |
+| singular `32 × 32` | not run | 146 ms | 140 ms |
+| singular `48 × 48` | not run | 335 ms | 333 ms |
+| dense `8 × 8`, 64-bit | 288 ms | 30 ms | 20 ms |
+| dense `16 × 16`, 64-bit | timeout | 133 ms | 124 ms |
+| dense `24 × 24`, 64-bit | not run | 396 ms | 423 ms |
 
-The timeout entries have no profiler breakdown because the corresponding
-proof exceeded the sweep's ten-second cap.
+A timeout entry has no profiler breakdown because the corresponding proof
+exceeded the sweep's wall limit (the import baseline plus the cap plus one
+second), and a "not run" entry is a dimension
+the arm never reached because its family had already stopped.
 
 Determinants on `Hex.Matrix` inputs, finite and closed algebraic carriers
 and symbolic entries are out of scope here
 ([SPEC/matrix-tactics.md §Placement](../../SPEC/matrix-tactics.md#placement)).
+
+## Result production and shared syntax
+
+Declare `det A with d hd` beside the existing `det` and `det% A` syntax kinds.
+It accepts the same `optConfig` before `A`, computes the certified numeric value
+once, introduces a local definition `d` with that value and `hd : A.det = d`,
+and leaves the ambient goal available. Both identifiers are explicit. Reuse the
+same certificate producer and proof construction as the term form; do not invent
+a target or call the closing tactic to discover a value. Extensions handle
+symbolic inputs on the same syntax kind and preserve committed errors.
+
+`HexMatrixMathlib.Det.Config` keeps `packing := true`, with `det -packing`
+unchanged, and adds `maxHeartbeats := 2000000` and `maxRelationWork := 1000000`
+for the symbolic handler. These fields do not change numeric certificate
+selection; the numeric backend retains its own existing budgets. Use structure
+configuration, not experimental global options. `det% A` and simprocs use defaults;
+a programmatic result operation accepts explicit configuration.
+
+The public record remains `Certified Matrix.det A` with `value` and `proof`.
+An expected determinant answer is never required for the result forms. Preserve
+integer defaulting for unannotated numeric literals, and respect explicit
+carrier annotations and expected record types. An imported symbolic extension
+classifies the matrix first: closed numeric
+matrices always use numeric certificate computation. Whole equality-tactic
+delegation also requires that the numeric closing handler accept the supplied
+target; otherwise the companion compares the numeric certified value against
+the symbolic target. Result forms delegate before symbolic work. Neither matrix
+shape nor a failed scalar comparison selects another determinant algorithm.
+
+Use Lean's public heartbeat units for `maxHeartbeats` (1,000 internal heartbeats
+per unit). The symbolic ceiling cannot enlarge the ambient remaining allowance;
+zero configuration limits reject explicitly. The fields have no effect on
+numeric certificates, including when non-default, and do not produce a warning.
+See the companion contract for the distinction between recoverable work-budget
+declines and propagated runtime resource exceptions.
+
+The numeric owner exposes `compute (cfg : Config) (A : Expr) : MetaM (Outcome Result)`
+and a `certified` adapter, with `Result.value` and `Result.proof`. Provide one
+symbolic extension hook; keep the default numeric implementation available alone.
+The argument-taking tactic uses `colGt term:max` before `with`, and has its own
+named syntax kind and final diagnostic handler. Use `HexMatrix.certificate` for
+route and budget traces.
 
 ## Tests
 
@@ -428,11 +514,16 @@ and symbolic entries are out of scope here
   `16 × 16` literal with `8`-bit entries;
 - `det%` on a definition, inline and on a rational literal, and its
   `proof` field closing the determinant equation;
-- `simp only [hex_norm_det]` on integer and rational literals, and on
-  symbolic entries through `norm_det` (with `ring`), plus the `det` tactic
-  reaching `norm_det` on symbolic entries and on `ZMod 7`;
+- `simp only [Hex.norm_det]` on integer and rational literals; both the simproc
+  and tactic reject unsupported symbolic and `ZMod 7` inputs even with
+  Mathlib's `norm_det` imported; the caller can invoke Mathlib explicitly;
 - the messages on a false target, a closed non-literal and a goal that is
-  not a determinant equation (`#guard_msgs`);
+  not a determinant equation, plus open-matrix and open-value diagnostics
+  without a test stub (`#guard_msgs`);
+- numeric-first dispatch to a test stub for open matrices and values, other
+  carriers, unrecognized literals and unrelated goals, with the handler order
+  asserted explicitly; numeric successes and false-target errors precede the
+  stub;
 - `Hex.Matrix.det` and the bare `det` identifier still usable on
   `Hex.Matrix`;
 - the axiom audit of a `16 × 16` determinant proved by `det`.
